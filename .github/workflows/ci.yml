@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Compute version
+        id: version
+        run: echo ::set-output name=version::$(echo ${{ github.ref }} | sed 's,^refs/tags/,,')
+      - name: Login to Docker registry
+        run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u jgiannuzzi --password-stdin
+      - name: Build Docker image
+        run: docker build -t jgiannuzzi/flutter-web:${{ steps.version.outputs.version }} --build-arg VERSION=${{ steps.version.outputs.version }} .
+      - name: Publish Docker image
+        run: docker push jgiannuzzi/flutter-web:${{ steps.version.outputs.version }}
+      - name: Export Docker image
+        run: docker image save jgiannuzzi/flutter-web:${{ steps.version.outputs.version }} -o flutter-web-docker.tar
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: Release ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          asset_path: ./flutter-web-docker.tar
+          asset_name: flutter-web-docker.tar
+          asset_content_type: application/x-tar
